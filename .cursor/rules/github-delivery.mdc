@@ -1,0 +1,12 @@
+---
+description: Commit and push completed DropScan work to the configured GitHub repository
+alwaysApply: true
+---
+
+# GitHub delivery
+
+- After completing and validating a requested code or documentation change, commit the related files and push the commit to the configured `origin` remote.
+- Use `https://github.com/CarToon890/dropscan-project.git` as `origin`.
+- Pull or fetch first when the remote may have newer work. Preserve remote history and resolve divergence without force-pushing.
+- Do not commit build output, test artifacts, local history, tokens, PINs, receiver IPs, or other machine-specific data.
+- Report the commit hash and push result in the final response.
