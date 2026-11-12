@@ -19,11 +19,17 @@ public sealed class LocalShareServer : IAsyncDisposable
     const string AccessCookie = "dropscan_access";
     const string ApprovalCookie = "dropscan_request";
     readonly WebApplication app;
+    readonly bool trustCloudflareClientIp;
     public ShareSession Session { get; }
     public string Url { get; private set; } = "";
-    LocalShareServer(WebApplication app, ShareSession session) { this.app = app; Session = session; }
+    LocalShareServer(WebApplication app, ShareSession session, bool trustCloudflareClientIp)
+    {
+        this.app = app;
+        Session = session;
+        this.trustCloudflareClientIp = trustCloudflareClientIp;
+    }
 
-    public static async Task<LocalShareServer> StartAsync(ShareSession session, IPAddress address, int port = 0)
+    public static async Task<LocalShareServer> StartAsync(ShareSession session, IPAddress address, int port = 0, bool trustCloudflareClientIp = false)
     {
         var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions { Args = Array.Empty<string>() });
         builder.Logging.ClearProviders(); // Do not log secret URLs or local paths.
@@ -34,7 +40,7 @@ public sealed class LocalShareServer : IAsyncDisposable
             options.Limits.MaxConcurrentConnections = 32;
             options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(10);
         });
-        var server = new LocalShareServer(builder.Build(), session);
+        var server = new LocalShareServer(builder.Build(), session, trustCloudflareClientIp);
         server.Configure();
         try
         {
@@ -128,7 +134,7 @@ public sealed class LocalShareServer : IAsyncDisposable
             var form = await context.Request.ReadFormAsync(context.RequestAborted);
             pin = form["pin"].ToString().Trim();
         }
-        string clientKey = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        string clientKey = ClientIp(context)?.ToString() ?? "unknown";
         var result = Session.VerifyPin(clientKey, pin, out int remaining);
         if (result == PinAttemptResult.Allowed)
         {
@@ -158,7 +164,7 @@ public sealed class LocalShareServer : IAsyncDisposable
         if (!Session.ApprovalRequired) { RedirectToShare(context, token); return; }
         var existing = Session.GetApprovalState(context.Request.Cookies[ApprovalCookie]);
         if (existing is ApprovalRequestState.Pending or ApprovalRequestState.Approved) { RedirectToShare(context, token); return; }
-        string client = context.Connection.RemoteIpAddress?.ToString() ?? "ไม่ทราบ IP";
+        string client = ClientIp(context)?.ToString() ?? "ไม่ทราบ IP";
         var grant = Session.CreateApprovalRequest(client, client.Length > 64 ? client[..64] : client);
         if (grant == null)
         {
@@ -193,6 +199,15 @@ public sealed class LocalShareServer : IAsyncDisposable
 
     static bool IsForwardedHttps(HttpContext context) =>
         string.Equals(context.Request.Headers["X-Forwarded-Proto"].ToString(), "https", StringComparison.OrdinalIgnoreCase);
+
+    IPAddress? ClientIp(HttpContext context)
+    {
+        var remoteIp = context.Connection.RemoteIpAddress;
+        if (trustCloudflareClientIp && remoteIp != null && IPAddress.IsLoopback(remoteIp) &&
+            IPAddress.TryParse(context.Request.Headers["CF-Connecting-IP"].ToString(), out var forwardedIp))
+            return forwardedIp;
+        return remoteIp;
+    }
 
     async Task Download(HttpContext context, string token, int id)
     {
@@ -341,4 +356,5 @@ public sealed class LocalShareServer : IAsyncDisposable
         finally { await app.DisposeAsync(); Session.Dispose(); }
     }
 }
+
 
