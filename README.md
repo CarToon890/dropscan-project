@@ -1,10 +1,18 @@
 # DropScan — Local Transfer
 
-โปรแกรม Windows สำหรับส่งไฟล์โดยตรงให้ผู้รับใน Wi-Fi/LAN เดียวกัน ผู้รับสแกน QR และดาวน์โหลดผ่านเบราว์เซอร์
+DropScan is a Windows desktop app for sending files directly from your PC. A recipient scans a QR code and downloads through a browser. LAN mode sends directly over your local network; the optional Cloudflare Quick Tunnel mode is experimental.
+
+โปรแกรม Windows สำหรับส่งไฟล์จากเครื่องผู้ส่งโดยตรง ผู้รับสแกน QR และดาวน์โหลดผ่านเบราว์เซอร์
+
+> **Public release status:** ยังเป็นรุ่นเตรียมเผยแพร่ ไม่มี signed installer หรือ tagged release ให้ดาวน์โหลดในขณะนี้ โหมด LAN ใช้ HTTP; Quick Tunnel เป็นฟีเจอร์ทดลองและยังรอการทดสอบผู้รับจากเครือข่ายภายนอก โปรดอ่าน [Security](SECURITY.md), [Privacy](PRIVACY.md) และ [แผนงาน](WORK_PLAN.md) ก่อนใช้งาน
+
+[Security policy](SECURITY.md) · [Privacy](PRIVACY.md) · [Contributing](CONTRIBUTING.md) · [Development plan](WORK_PLAN.md)
 
 ## เปิดใช้งาน
 
-เปิด `bin/Release/net8.0-windows/DropScan.exe` โดยเก็บไฟล์อื่นในโฟลเดอร์เดียวกันไว้ด้วย รุ่นนี้ต้องมี .NET 8 Desktop Runtime และ ASP.NET Core Runtime บนเครื่อง (เครื่องพัฒนาปัจจุบันมีแล้ว)
+ก่อนมี Release อย่างเป็นทางการ ให้ build จาก source ด้วย .NET 10 SDK หรือใช้แพ็กเกจ ZIP ที่สร้างจาก workflow `Windows CI` แพ็กเกจ self-contained รวม runtime ที่จำเป็นแล้ว ไม่ต้องติดตั้ง .NET แยก
+
+แพ็กเกจที่เตรียมไว้เป็น Windows x64; .NET 10 รองรับ Windows 11 และรองรับ Windows 10 เฉพาะ LTSC/Enterprise รุ่นที่ระบุใน [ตารางรองรับของ Microsoft](https://learn.microsoft.com/dotnet/core/install/windows)
 
 1. เลือกไฟล์หรือโฟลเดอร์ (ลากวางได้) ตรวจรายการ แล้วกดถัดไป
 2. เลือก IP ของ Wi-Fi/Ethernet หรือ Cloudflare Quick Tunnel (ทดลอง), อายุรายการ และเลือกเปิด PIN 6 หลักหรือการอนุมัติผู้รับได้ตามต้องการ
@@ -69,7 +77,7 @@ powershell -ExecutionPolicy Bypass -File tests/PhaseTwoSmoke/run.ps1
 powershell -ExecutionPolicy Bypass -File tests/PhaseThreeSmoke/run.ps1
 ```
 
-ชุดนี้ทดสอบ HTTP จริง 30 จุด ครอบคลุม PIN ผิด/ถูก, การพัก 60 วินาที, คุกกี้สิทธิ์, การซ่อนข้อมูลก่อนยืนยัน และสิทธิ์ของไฟล์รายตัว, ZIP, HEAD และ Range
+ชุดนี้ทดสอบ HTTP จริง ครอบคลุม PIN ผิด/ถูก, การพัก 60 วินาที, คุกกี้สิทธิ์, การซ่อนข้อมูลก่อนยืนยัน และสิทธิ์ของไฟล์รายตัว, ZIP, HEAD และ Range
 
 ทดสอบการอนุมัติผู้รับระยะ 3:
 
@@ -77,13 +85,13 @@ powershell -ExecutionPolicy Bypass -File tests/PhaseThreeSmoke/run.ps1
 powershell -ExecutionPolicy Bypass -File tests/ApprovalSmoke/run.ps1
 ```
 
-ชุดนี้ทดสอบ HTTP จริง 37 จุด ครอบคลุมการส่งคำขอ อนุมัติ ปฏิเสธ ยกเลิก หมดอายุ เพดานคำขอ การผูกสิทธิ์กับเบราว์เซอร์ การซ่อนข้อมูล และการใช้ร่วมกับ PIN
+ชุดนี้ทดสอบ HTTP จริง ครอบคลุมการส่งคำขอ อนุมัติ ปฏิเสธ ยกเลิก หมดอายุ เพดานคำขอ การผูกสิทธิ์กับเบราว์เซอร์ การซ่อนข้อมูล และการใช้ร่วมกับ PIN
 
 ดูรายละเอียดงานต่อและเกณฑ์ตรวจรับใน [WORK_PLAN.md](WORK_PLAN.md)
 
 ## สร้างแพ็กเกจ Windows แบบ Self-contained
 
-ใช้ Windows x64 ที่ติดตั้ง .NET 8 SDK แล้วรัน:
+ใช้ Windows x64 ที่ติดตั้ง .NET 10 SDK แล้วรัน:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/Publish-Windows.ps1
@@ -104,7 +112,7 @@ powershell -ExecutionPolicy Bypass -File tools/Publish-Windows.ps1
 
 ## อ้างอิงการพัฒนา
 
-- [Microsoft: Kestrel endpoint configuration](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/endpoints?view=aspnetcore-8.0)
+- [Microsoft: Kestrel endpoint configuration](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/endpoints?view=aspnetcore-10.0)
 - [QRCoder](https://www.nuget.org/packages/QRCoder/1.8.0) สำหรับ QR ในโปรแกรม
 - [ZXing.Net](https://www.nuget.org/packages/ZXing.Net/0.16.11) ใช้เฉพาะชุดทดสอบอ่าน QR กลับ
 
