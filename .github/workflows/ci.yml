@@ -49,17 +49,21 @@ jobs:
       - name: Run smoke suites
         shell: pwsh
         run: |
-          $projects = @(
-            'tests/TransferSmoke/TransferSmoke.csproj',
-            'tests/PhaseTwoSmoke/PhaseTwoSmoke.csproj',
-            'tests/PhaseThreeSmoke/PhaseThreeSmoke.csproj',
-            'tests/ApprovalSmoke/ApprovalSmoke.csproj',
-            'tests/DesktopSmoke/DesktopSmoke.csproj'
+          $suites = @(
+            @{ Name = 'TransferSmoke'; Project = 'tests/TransferSmoke/TransferSmoke.csproj'; Script = $null },
+            @{ Name = 'PhaseTwoSmoke'; Project = $null; Script = 'tests/PhaseTwoSmoke/run.ps1' },
+            @{ Name = 'PhaseThreeSmoke'; Project = $null; Script = 'tests/PhaseThreeSmoke/run.ps1' },
+            @{ Name = 'ApprovalSmoke'; Project = $null; Script = 'tests/ApprovalSmoke/run.ps1' },
+            @{ Name = 'DesktopSmoke'; Project = 'tests/DesktopSmoke/DesktopSmoke.csproj'; Script = $null }
           )
-          foreach ($project in $projects) {
-            Write-Host "Running $project"
-            dotnet run --project $project --configuration Release --no-restore
-            if ($LASTEXITCODE -ne 0) { throw "Smoke suite failed: $project" }
+          foreach ($suite in $suites) {
+            Write-Host "Running $($suite.Name)"
+            if ($suite.Script) {
+              pwsh -NoProfile -ExecutionPolicy Bypass -File $suite.Script
+            } else {
+              dotnet run --project $suite.Project --configuration Release --no-restore
+            }
+            if ($LASTEXITCODE -ne 0) { throw "Smoke suite failed: $($suite.Name)" }
           }
 
       - name: Check NuGet vulnerabilities
