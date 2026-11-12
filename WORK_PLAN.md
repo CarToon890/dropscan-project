@@ -168,14 +168,18 @@ PIN เพิ่มการควบคุมผู้รับ แต่ข้
 - [x] เพิ่ม Security policy, Privacy notice และแนวทาง contribution
 - [x] ปรับเอกสารให้ระบุ HTTP ใน LAN, Cloudflare เป็นผู้ให้บริการทางผ่าน, การเก็บข้อมูลใน history และสถานะฟีเจอร์ทดลอง
 - [x] ย้าย target framework จาก .NET 8 (หมดระยะสนับสนุน 10 พ.ย. 2026) เป็น .NET 10
-- [ ] รัน Windows CI หลังย้าย .NET 10 และแก้ผลจนผ่าน — build ผ่านบน GitHub Actions; TransferSmoke ผ่าน แต่ PhaseTwoSmoke ล้มเพราะ workflow ไม่ได้เตรียม junction fixture; ปรับ workflow ให้ใช้ run.ps1 แล้ว รอผลรอบใหม่
+- [x] รัน Windows CI หลังย้าย .NET 10 และแก้ผลจนผ่าน — GitHub Actions run `43321563241` บน commit `5ed2f2a` ผ่าน restore, Release build, smoke suites ทั้งหมด, NuGet vulnerability audit และสร้าง ZIP/checksum artifact
 - [x] ผู้ใช้เลือก MIT; เพิ่ม LICENSE ที่ root และรวม LICENSE-DropScan.txt ใน ZIP ที่สร้างใหม่
 - [ ] ตรวจข้ามเครือข่ายด้วยผู้รับบนมือถือ/เครือข่ายอื่น — พักไว้ตามคำสั่งผู้ใช้; Quick Tunnel ยังเป็น experimental
 - [ ] ทดสอบแพ็กเกจบน Windows สะอาดที่ไม่มี SDK หรือเครื่องมือพัฒนา
 - [ ] ตัดสินใจการลงนาม Authenticode/installer; แพ็กเกจปัจจุบันเป็น ZIP และยังไม่ลงนาม อาจแสดง SmartScreen warning
-- [ ] สร้าง versioned GitHub Release หลัง CI ผ่านและงานที่เป็น release blocker ปิดครบ พร้อมแนบ SHA-256
+- [ ] สร้าง versioned GitHub Release หลัง CI ผ่านและงานที่เป็น release blocker ปิดครบ พร้อมแนบ SHA-256 — ณ 13 พ.ย. 2026 ยังไม่มี Release/tag; artifact จาก CI เป็นไฟล์ชั่วคราว หมดอายุ 30 วัน ไม่ใช่แพ็กเกจเผยแพร่
 
-การตรวจสอบรอบเตรียม Public ปัจจุบัน: TransferSmoke 25, PhaseTwoSmoke 34, PhaseThreeSmoke 36, ApprovalSmoke 39 และ DesktopSmoke 97 ผ่านก่อนเปลี่ยน TargetFramework; Release build เดิมและ ZIP เดิมตรวจผ่าน แต่ผลเหล่านี้ยังไม่ใช่หลักฐานว่า .NET 10 target ใหม่ build ผ่าน
+ผลตรวจล่าสุดบน GitHub: Windows CI run `43321563241` สำหรับ commit `5ed2f2a` ผ่านทุกขั้น รวม .NET 10 restore/build, smoke suites, NuGet vulnerability audit และสร้างแพ็กเกจ/ไฟล์ checksum (artifact ID `13989634277`, หมดอายุ 12 ธ.ค. 2026) จึงยืนยัน .NET 10 target ใหม่บน runner ของ GitHub ได้แล้ว การ build ใน workspace นี้ยังทำซ้ำไม่ได้เพราะติดตั้ง .NET 10 runtime แต่ไม่มี .NET 10 SDK; ไม่ใช้ ZIP เก่าใน `artifacts/packages` เป็น release artifact เพราะตรวจพบว่ามีเพียง EXE กับ README-user.md และไม่มี notices ตามแพ็กเกจล่าสุด
+
+การตรวจ repository: visibility เป็น Public, MIT และเอกสาร Security/Privacy/Contributing อยู่บน `main`, ไม่มี GitHub Release หรือ tag สำหรับผู้ใช้ดาวน์โหลด ณ วันตรวจ และไม่มี ruleset ที่บังคับปกป้อง `main`; endpoint branch protection/private vulnerability reporting อ่านไม่ได้ผ่านการเชื่อมต่อปัจจุบัน จึงยังยืนยันการตั้งค่าเหล่านั้นไม่ได้
+
+ยังเหลือก่อนแจกแพ็กเกจสู่สาธารณะ: ทดสอบ CI artifact บน Windows สะอาด, ตรวจรับส่งจากอุปกรณ์บนเครือข่ายภายนอก (ยังพักไว้ตามคำสั่งผู้ใช้), ตัดสินใจ unsigned ZIP เทียบกับ Authenticode/installer และสร้าง GitHub Release พร้อม checksum เมื่อ blocker ที่เลือกปิดแล้ว
 
 เกณฑ์ผ่าน: สแกนและรับไฟล์ได้จากอีกเครือข่ายผ่าน HTTPS ที่ไม่มี certificate warning, หยุดแชร์แล้ว URL เดิมใช้ไม่ได้, ทดสอบ Tunnel หลุด/เริ่มใหม่ และแจ้งข้อจำกัดผู้ให้บริการตามการใช้งานจริง
 
