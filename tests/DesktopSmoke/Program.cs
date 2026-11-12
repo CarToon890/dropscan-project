@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -32,6 +33,68 @@ internal static class Program
         task.GetAwaiter().GetResult();
     }
     static void Check(bool ok, string message) { if (!ok) throw new Exception(message); assertions++; }
+
+    static Process StartTunnelFixture()
+    {
+        var start = new ProcessStartInfo
+        {
+            FileName = Environment.GetEnvironmentVariable("COMSPEC") ?? "cmd.exe",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        start.ArgumentList.Add("/c");
+        start.ArgumentList.Add("ping");
+        start.ArgumentList.Add("-n");
+        start.ArgumentList.Add("60");
+        start.ArgumentList.Add("127.0.0.1");
+        return Process.Start(start) ?? throw new InvalidOperationException("Could not start local tunnel fixture process.");
+    }
+
+    static CloudflareQuickTunnel WrapTunnelProcess(Process process)
+    {
+        var constructor = typeof(CloudflareQuickTunnel).GetConstructor(Private, null, new[] { typeof(Process), typeof(string) }, null)!;
+        return (CloudflareQuickTunnel)constructor.Invoke(new object[] { process, "https://local-test.trycloudflare.com" });
+    }
+
+    static ShareRecord MakeSyntheticShare(string fixture, string url)
+    {
+        var session = new ShareSession(new[] { fixture }, TimeSpan.FromHours(1));
+        return new ShareRecord { Code = url, Session = session, FileCount = 1, TotalBytes = session.Files.Sum(f => f.Length), Expiry = "1 ชั่วโมง" };
+    }
+
+    static void VerifyTunnelFailurePaths(string output, string fixture)
+    {
+        string historyPath = Path.Combine(output, "tunnel-health-history-" + Guid.NewGuid().ToString("N") + ".json");
+
+        // A failed loopback health request must stop the active share and dispose the tunnel process.
+        window = new MainWindow(new HistoryStore(historyPath));
+        Call("ShowStep", 2);
+        var healthRecord = MakeSyntheticShare(fixture, "http://127.0.0.1:1/s/local-health-failure");
+        Field<ObservableCollection<ShareRecord>>("history").Insert(0, healthRecord);
+        typeof(MainWindow).GetField("activeShare", Private)!.SetValue(window, healthRecord);
+        typeof(MainWindow).GetField("tunnel", Private)!.SetValue(window, WrapTunnelProcess(StartTunnelFixture()));
+        AsyncCall("ProbeTunnelAsync");
+        Check(healthRecord.IsStopped, "Failed Tunnel health probe stops the share");
+        Check(Field<CloudflareQuickTunnel?>("tunnel") == null && Control<TextBlock>("ResultStatus").Text.Contains("ติดต่อไม่ได้"), "Failed Tunnel health probe disposes the tunnel and reports the outage");
+        window.Close();
+
+        // An unexpectedly exited cloudflared child must also revoke the share on the next refresh tick.
+        window = new MainWindow(new HistoryStore(historyPath));
+        Call("ShowStep", 2);
+        var exitRecord = MakeSyntheticShare(fixture, "http://127.0.0.1:1/s/local-process-exit");
+        Field<ObservableCollection<ShareRecord>>("history").Insert(0, exitRecord);
+        typeof(MainWindow).GetField("activeShare", Private)!.SetValue(window, exitRecord);
+        var child = StartTunnelFixture();
+        typeof(MainWindow).GetField("tunnel", Private)!.SetValue(window, WrapTunnelProcess(child));
+        child.Kill(entireProcessTree: true);
+        child.WaitForExit(5000);
+        Call("RefreshTransfer");
+        Check(exitRecord.IsStopped, "Unexpected cloudflared process exit stops the share");
+        Check(Field<CloudflareQuickTunnel?>("tunnel") == null && Control<TextBlock>("ResultStatus").Text.Contains("ขาดการเชื่อมต่อ"), "Unexpected cloudflared exit disposes the tunnel and reports the outage");
+        window.Close();
+    }
 
     [STAThread]
     static int Main(string[] args)
@@ -150,6 +213,7 @@ internal static class Program
             Check(restored.Count == 1 && restored[0].FileCount == 19, "Reopening retains persisted history summary");
             Check(restored[0].Session == null && restored[0].Code == "" && restored[0].IsStopped, "Reopening cannot revive a share or token");
             window.Close();
+            VerifyTunnelFailurePaths(output, first);
             Console.WriteLine($"PASS: {assertions} assertions; 32 WPF layout renders at 960x720 / 800x600, 125% / 150% DPI. Output: {output}");
             return 0;
         }
@@ -189,6 +253,7 @@ internal static class Program
         }
     }
 }
+
 
 
 
