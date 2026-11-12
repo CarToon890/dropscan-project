@@ -18,6 +18,13 @@ public sealed class CloudflareQuickTunnel : IDisposable
     }
 
     public static async Task<CloudflareQuickTunnel> StartAsync(string localOrigin, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
+        => await StartAsync(localOrigin, timeout, cancellationToken, Process.Start);
+
+    internal static async Task<CloudflareQuickTunnel> StartAsync(
+        string localOrigin,
+        TimeSpan? timeout,
+        CancellationToken cancellationToken,
+        Func<ProcessStartInfo, Process?> processStarter)
     {
         var start = new ProcessStartInfo
         {
@@ -33,7 +40,7 @@ public sealed class CloudflareQuickTunnel : IDisposable
         start.ArgumentList.Add(localOrigin);
 
         Process child;
-        try { child = Process.Start(start) ?? throw new InvalidOperationException("Cloudflare Tunnel could not be started."); }
+        try { child = processStarter(start) ?? throw new InvalidOperationException("Cloudflare Tunnel could not be started."); }
         catch (System.ComponentModel.Win32Exception ex) { throw new FileNotFoundException("cloudflared was not found. Install Cloudflare Tunnel and restart DropScan.", ex); }
 
         var output = System.Threading.Channels.Channel.CreateUnbounded<string>(new System.Threading.Channels.UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
@@ -60,19 +67,29 @@ public sealed class CloudflareQuickTunnel : IDisposable
         }
         catch (OperationCanceledException ex)
         {
+            StopProcess(child);
+            if (cancellationToken.IsCancellationRequested) throw;
             throw new TimeoutException("Cloudflare Quick Tunnel did not become ready within the allowed time.", ex);
         }
         catch
         {
-            try { if (!child.HasExited) child.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
-            child.Dispose();
+            StopProcess(child);
             throw;
         }
     }
 
-    public void Dispose()
+    static void StopProcess(Process child)
     {
-        try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
-        process.Dispose();
+        try
+        {
+            if (!child.HasExited) child.Kill(entireProcessTree: true);
+            child.WaitForExit(5000);
+        }
+        catch (InvalidOperationException) { }
+        catch (System.ComponentModel.Win32Exception) { }
+        finally { child.Dispose(); }
     }
+
+    public void Dispose() => StopProcess(process);
 }
+
