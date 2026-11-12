@@ -168,7 +168,7 @@ PIN เพิ่มการควบคุมผู้รับ แต่ข้
 - [x] เพิ่ม Security policy, Privacy notice และแนวทาง contribution
 - [x] ปรับเอกสารให้ระบุ HTTP ใน LAN, Cloudflare เป็นผู้ให้บริการทางผ่าน, การเก็บข้อมูลใน history และสถานะฟีเจอร์ทดลอง
 - [x] ย้าย target framework จาก .NET 8 (หมดระยะสนับสนุน 10 พ.ย. 2026) เป็น .NET 10
-- [ ] รัน Windows CI หลังย้าย .NET 10 และแก้ผลจนผ่าน — เครื่องพัฒนานี้มี SDK ถึง .NET 9 เท่านั้น จึงยังยืนยันการ build target ใหม่ในเครื่องไม่ได้
+- [ ] รัน Windows CI หลังย้าย .NET 10 และแก้ผลจนผ่าน — build ผ่านบน GitHub Actions; TransferSmoke ผ่าน แต่ PhaseTwoSmoke ล้มเพราะ workflow ไม่ได้เตรียม junction fixture; ปรับ workflow ให้ใช้ run.ps1 แล้ว รอผลรอบใหม่
 - [x] ผู้ใช้เลือก MIT; เพิ่ม LICENSE ที่ root และรวม LICENSE-DropScan.txt ใน ZIP ที่สร้างใหม่
 - [ ] ตรวจข้ามเครือข่ายด้วยผู้รับบนมือถือ/เครือข่ายอื่น — พักไว้ตามคำสั่งผู้ใช้; Quick Tunnel ยังเป็น experimental
 - [ ] ทดสอบแพ็กเกจบน Windows สะอาดที่ไม่มี SDK หรือเครื่องมือพัฒนา
