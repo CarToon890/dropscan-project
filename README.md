@@ -80,6 +80,18 @@ powershell -ExecutionPolicy Bypass -File tests/ApprovalSmoke/run.ps1
 
 ดูรายละเอียดงานต่อและเกณฑ์ตรวจรับใน [WORK_PLAN.md](WORK_PLAN.md)
 
+## สร้างแพ็กเกจ Windows แบบ Self-contained
+
+ใช้ Windows x64 ที่ติดตั้ง .NET 8 SDK แล้วรัน:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/Publish-Windows.ps1
+```
+
+สคริปต์สร้างไฟล์ ZIP ที่ `artifacts/packages/DropScan-win-x64.zip` และโฟลเดอร์ publish ที่ `artifacts/publish/win-x64` โดยแพ็ก .NET Runtime ไปกับโปรแกรมแล้ว ผู้รับไฟล์ในโหมด LAN ไม่ต้องติดตั้งอะไรเพิ่ม; โหมด Cloudflare Quick Tunnel ยังต้องติดตั้ง `cloudflared` แยก
+
+คู่มือสำหรับผู้ใช้ปลายทางจะถูกรวมไว้ใน ZIP ชื่อ `README-user.md` ดูข้อจำกัดและขั้นตอนเปิดแอปได้จากไฟล์นั้น
+
 การทดสอบ Cloudflare Quick Tunnel:
 
 1. ติดตั้ง `cloudflared` สำหรับ Windows จาก [เอกสาร Cloudflare](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
@@ -94,4 +106,5 @@ powershell -ExecutionPolicy Bypass -File tests/ApprovalSmoke/run.ps1
 - [Microsoft: Kestrel endpoint configuration](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/endpoints?view=aspnetcore-8.0)
 - [QRCoder](https://www.nuget.org/packages/QRCoder/1.8.0) สำหรับ QR ในโปรแกรม
 - [ZXing.Net](https://www.nuget.org/packages/ZXing.Net/0.16.11) ใช้เฉพาะชุดทดสอบอ่าน QR กลับ
+
 
