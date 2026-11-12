@@ -65,8 +65,11 @@ public partial class MainWindow : Window
     readonly DispatcherTimer refreshTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     LocalShareServer? server;
     CloudflareQuickTunnel? tunnel;
-    DateTime tunnelStartedAt;
+    DateTime nextTunnelProbeAt = DateTime.MaxValue;
     bool tunnelProbeActive;
+    int tunnelProbeFailures;
+    const int MaxTunnelProbeFailures = 3;
+    static readonly TimeSpan TunnelProbeInterval = TimeSpan.FromSeconds(15);
     static readonly HttpClient tunnelHealthClient = new() { Timeout = TimeSpan.FromSeconds(5) };
     ShareRecord? activeShare;
     int step;
@@ -250,6 +253,8 @@ public partial class MainWindow : Window
             PinText.Focus(); PinText.SelectAll(); return;
         }
         creating = true;
+        tunnelProbeFailures = 0;
+        nextTunnelProbeAt = DateTime.MaxValue;
         PreparePanel.IsEnabled = false;
         HistoryButton.IsEnabled = false;
         ShowError(PrepareError, "");
@@ -262,13 +267,13 @@ public partial class MainWindow : Window
             var expiryLabel = duration == TimeSpan.FromHours(1) ? "1 ชั่วโมง" : duration == TimeSpan.FromDays(7) ? "7 วัน" : "24 ชั่วโมง";
             var selected = files.ToArray();
             session = await Task.Run(() => new ShareSession(selected, duration, selectedPin, approvalRequired));
-            server = await LocalShareServer.StartAsync(session, network.Address);
+            server = await LocalShareServer.StartAsync(session, network.Address, trustCloudflareClientIp: network.IsTunnel);
             string shareUrl = server.Url;
             if (network.IsTunnel)
             {
                 string origin = new Uri(server.Url).GetLeftPart(UriPartial.Authority);
                 tunnel = await CloudflareQuickTunnel.StartAsync(origin);
-                tunnelStartedAt = DateTime.UtcNow;
+                nextTunnelProbeAt = DateTime.UtcNow + TunnelProbeInterval;
                 shareUrl = tunnel.Url + new Uri(server.Url).AbsolutePath;
             }
             activeShare = new ShareRecord
@@ -303,13 +308,13 @@ public partial class MainWindow : Window
             RefreshTransfer();
             ShowStep(2);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Net.Sockets.SocketException or InvalidOperationException or ArgumentException or TimeoutException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Net.Sockets.SocketException or InvalidOperationException or ArgumentException or TimeoutException or OperationCanceledException)
         {
             tunnel?.Dispose(); tunnel = null;
             if (server != null) { await server.DisposeAsync(); server = null; }
             else session?.Dispose();
             activeShare = null;
-            ShowError(PrepareError, ex is FileNotFoundException ? "ไม่พบ cloudflared • ติดตั้ง Cloudflare Tunnel แล้วลองใหม่" : ex is TimeoutException ? "เริ่ม Cloudflare Tunnel ไม่ทันเวลา • ตรวจอินเทอร์เน็ตแล้วลองใหม่" : "เริ่มแชร์ไม่สำเร็จ ตรวจไฟล์ เครือข่าย หรือการเชื่อมต่อ Tunnel แล้วลองใหม่");
+            ShowError(PrepareError, ex is FileNotFoundException ? "ไม่พบ cloudflared • ติดตั้ง Cloudflare Tunnel แล้วลองใหม่" : ex is TimeoutException ? "เริ่ม Cloudflare Tunnel ไม่ทันเวลา • ตรวจอินเทอร์เน็ตแล้วลองใหม่" : ex is OperationCanceledException ? "ยกเลิกการเริ่มแชร์แล้ว" : "เริ่มแชร์ไม่สำเร็จ ตรวจไฟล์ เครือข่าย หรือการเชื่อมต่อ Tunnel แล้วลองใหม่");
         }
         finally { creating = false; PreparePanel.IsEnabled = true; HistoryButton.IsEnabled = true; }
     }
@@ -317,7 +322,7 @@ public partial class MainWindow : Window
     void RefreshTransfer()
     {
         if (activeShare == null) return;
-        if (tunnel != null && tunnel.IsRunning && !tunnelProbeActive && DateTime.UtcNow - tunnelStartedAt > TimeSpan.FromSeconds(15)) _ = ProbeTunnelAsync();
+        if (tunnel != null && tunnel.IsRunning && !tunnelProbeActive && DateTime.UtcNow >= nextTunnelProbeAt) _ = ProbeTunnelAsync();
         if (tunnel != null && activeShare.IsStopped)
         {
             tunnel.Dispose(); tunnel = null;
@@ -358,21 +363,36 @@ public partial class MainWindow : Window
         var currentTunnel = tunnel;
         try
         {
-            using var response = await tunnelHealthClient.GetAsync(activeShare.Code, HttpCompletionOption.ResponseHeadersRead);
+            using var request = new HttpRequestMessage(HttpMethod.Head, activeShare.Code);
+            using var response = await tunnelHealthClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             if (!response.IsSuccessStatusCode) throw new HttpRequestException("Tunnel health request failed.");
+            if (ReferenceEquals(tunnel, currentTunnel) && activeShare?.IsStopped == false)
+            {
+                tunnelProbeFailures = 0;
+                ResultStatus.Text = "Tunnel HTTPS พร้อมแล้ว • URL สาธารณะชั่วคราว • ข้อมูลผ่าน Cloudflare";
+            }
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
         {
             if (ReferenceEquals(tunnel, currentTunnel) && activeShare?.IsStopped == false)
             {
-                activeShare.Stop();
-                QueueHistorySave();
-                tunnel.Dispose(); tunnel = null;
-                ResultStatus.Text = "Cloudflare Tunnel ติดต่อไม่ได้ • ลิงก์ภายนอกถูกปิดแล้ว";
-                RefreshTransfer();
+                tunnelProbeFailures++;
+                if (tunnelProbeFailures >= MaxTunnelProbeFailures)
+                {
+                    activeShare.Stop();
+                    QueueHistorySave();
+                    tunnel.Dispose(); tunnel = null;
+                    ResultStatus.Text = $"Cloudflare Tunnel ติดต่อไม่ได้ {MaxTunnelProbeFailures} ครั้ง • ลิงก์ภายนอกถูกปิดแล้ว";
+                    RefreshTransfer();
+                }
+                else ResultStatus.Text = $"Tunnel ติดต่อขัดข้องชั่วคราว • กำลังลองใหม่ ({tunnelProbeFailures}/{MaxTunnelProbeFailures})";
             }
         }
-        finally { tunnelProbeActive = false; }
+        finally
+        {
+            if (ReferenceEquals(tunnel, currentTunnel)) nextTunnelProbeAt = DateTime.UtcNow + TunnelProbeInterval;
+            tunnelProbeActive = false;
+        }
     }
     void RefreshApprovalRequests()
     {
@@ -497,6 +517,7 @@ public partial class MainWindow : Window
         finally { tray?.Dispose(); tray = null; Close(); }
     }
 }
+
 
 
 
