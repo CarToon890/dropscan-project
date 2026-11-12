@@ -8,7 +8,7 @@ This package is built for Windows x64. .NET 10 currently supports Windows 11 and
 
 This package includes the .NET 10 runtime for Windows x64; a separate .NET runtime installation is not required.
 
-The package includes third-party license notices in `THIRD-PARTY-NOTICES.md`, `DOTNET-LICENSE.txt`, and `DOTNET-THIRD-PARTY-NOTICES.txt`.
+DropScan source and the application are distributed under the MIT License in `LICENSE-DropScan.txt`. Third-party notices are in `THIRD-PARTY-NOTICES.md`, `DOTNET-LICENSE.txt`, and `DOTNET-THIRD-PARTY-NOTICES.txt`.
 
 LAN mode does not require `cloudflared`. Cloudflare Quick Tunnel is experimental and requires `cloudflared` installed from Cloudflare's official source. Its public URL is temporary and anyone with the URL may access the share subject to its PIN/approval settings. Do not use it for sensitive files.
 
