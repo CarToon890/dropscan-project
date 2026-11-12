@@ -63,6 +63,20 @@ internal static class Program
                 Check(!protectedSession.ValidateAccessGrant("wrong-cookie"), "Wrong access grant rejected");
             }
 
+            using (var tunnelRateLimit = new ShareSession(new[] { source }, TimeSpan.FromMinutes(1), "482913"))
+            await using (var server = await LocalShareServer.StartAsync(tunnelRateLimit, IPAddress.Loopback, trustCloudflareClientIp: true))
+            using (var attacker = new HttpClient(new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false }))
+            using (var recipient = new HttpClient(new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false }))
+            {
+                attacker.DefaultRequestHeaders.TryAddWithoutValidation("CF-Connecting-IP", "203.0.113.10");
+                recipient.DefaultRequestHeaders.TryAddWithoutValidation("CF-Connecting-IP", "198.51.100.20");
+                for (int attempt = 0; attempt < 5; attempt++)
+                    using (var wrong = await attacker.PostAsync(server.Url + "/pin", new FormUrlEncodedContent(new Dictionary<string, string> { ["pin"] = "111111" })))
+                        Check(wrong.StatusCode == (attempt == 4 ? HttpStatusCode.TooManyRequests : HttpStatusCode.Unauthorized), $"Tunnel PIN attempts are rate limited per forwarded client IP ({attempt + 1})");
+                using var validOtherRecipient = await recipient.PostAsync(server.Url + "/pin", new FormUrlEncodedContent(new Dictionary<string, string> { ["pin"] = "482913" }));
+                Check(validOtherRecipient.StatusCode == HttpStatusCode.SeeOther, "One Tunnel recipient's lockout does not block a different recipient IP");
+            }
+
             var cookies = new CookieContainer();
             using var authorizedClient = new HttpClient(new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false, UseCookies = true, CookieContainer = cookies });
             using (var session = new ShareSession(new[] { source }, TimeSpan.FromMinutes(1), "640275"))
@@ -120,3 +134,4 @@ internal static class Program
         throw new Exception(message);
     }
 }
+
