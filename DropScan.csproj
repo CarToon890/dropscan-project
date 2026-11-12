@@ -1,12 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>DropScan</AssemblyName>
+    <Product>DropScan</Product>
+    <Description>Direct, short-lived file transfers from a Windows PC.</Description>
+    <RepositoryUrl>https://github.com/CarToon890/dropscan-project</RepositoryUrl>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
   </PropertyGroup>
   <ItemGroup>
     <Using Remove="System.Windows.Forms" />
@@ -17,3 +21,4 @@
     <Page Remove="tests/**/*.xaml" />
   </ItemGroup>
 </Project>
+
