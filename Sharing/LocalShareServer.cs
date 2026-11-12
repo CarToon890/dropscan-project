@@ -134,7 +134,7 @@ public sealed class LocalShareServer : IAsyncDisposable
         {
             context.Response.Cookies.Append(AccessCookie, Session.AccessGrant, new CookieOptions
             {
-                HttpOnly = true, SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Strict, Path = $"/s/{token}", Expires = Session.ExpiresAt
+                HttpOnly = true, Secure = IsForwardedHttps(context), SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Strict, Path = $"/s/{token}", Expires = Session.ExpiresAt
             });
             context.Response.StatusCode = StatusCodes.Status303SeeOther;
             context.Response.Headers.Location = $"/s/{token}";
@@ -167,7 +167,7 @@ public sealed class LocalShareServer : IAsyncDisposable
         }
         context.Response.Cookies.Append(ApprovalCookie, grant.Secret, new CookieOptions
         {
-            HttpOnly = true, SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Strict, Path = $"/s/{token}", Expires = Session.ExpiresAt
+            HttpOnly = true, Secure = IsForwardedHttps(context), SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Strict, Path = $"/s/{token}", Expires = Session.ExpiresAt
         });
         RedirectToShare(context, token);
     }
@@ -190,6 +190,9 @@ public sealed class LocalShareServer : IAsyncDisposable
         context.Response.StatusCode = StatusCodes.Status303SeeOther;
         context.Response.Headers.Location = $"/s/{token}";
     }
+
+    static bool IsForwardedHttps(HttpContext context) =>
+        string.Equals(context.Request.Headers["X-Forwarded-Proto"].ToString(), "https", StringComparison.OrdinalIgnoreCase);
 
     async Task Download(HttpContext context, string token, int id)
     {

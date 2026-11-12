@@ -2,6 +2,7 @@ using Microsoft.Win32;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Controls;
@@ -63,6 +64,10 @@ public partial class MainWindow : Window
     readonly HashSet<Guid> notifiedApprovalRequests = new();
     readonly DispatcherTimer refreshTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     LocalShareServer? server;
+    CloudflareQuickTunnel? tunnel;
+    DateTime tunnelStartedAt;
+    bool tunnelProbeActive;
+    static readonly HttpClient tunnelHealthClient = new() { Timeout = TimeSpan.FromSeconds(5) };
     ShareRecord? activeShare;
     int step;
     bool showingHistory;
@@ -136,10 +141,20 @@ public partial class MainWindow : Window
 
     void RefreshNetworks(object sender, RoutedEventArgs e)
     {
-        var selected = (NetworkSelect.SelectedItem as NetworkChoice)?.Address;
+        var selected = NetworkSelect.SelectedItem as NetworkChoice;
         var networks = NetworkChoice.Find();
         NetworkSelect.ItemsSource = networks;
-        NetworkSelect.SelectedItem = networks.FirstOrDefault(n => n.Address.Equals(selected)) ?? networks.First();
+        NetworkSelect.SelectedItem = networks.FirstOrDefault(n => selected != null && n.IsTunnel == selected.IsTunnel && n.Address.Equals(selected.Address)) ?? networks.First();
+        UpdateNetworkHint();
+    }
+
+    void NetworkSelect_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateNetworkHint();
+    void UpdateNetworkHint()
+    {
+        if (NetworkHint == null || NetworkSelect?.SelectedItem is not NetworkChoice choice) return;
+        NetworkHint.Text = choice.IsTunnel
+            ? "Cloudflare Quick Tunnel: URL ชั่วคราวสาธารณะ ใช้ทดสอบเท่านั้น • ต้องติดตั้ง cloudflared"
+            : "โหมด LAN ใช้ HTTP ภายในเครือข่ายเดียวกัน";
     }
 
     async void PickFiles(object sender, RoutedEventArgs e)
@@ -242,18 +257,27 @@ public partial class MainWindow : Window
         try
         {
             if (server != null) { await server.DisposeAsync(); server = null; }
+            tunnel?.Dispose(); tunnel = null;
             var duration = ExpiryHour.IsChecked == true ? TimeSpan.FromHours(1) : ExpiryWeek.IsChecked == true ? TimeSpan.FromDays(7) : TimeSpan.FromDays(1);
             var expiryLabel = duration == TimeSpan.FromHours(1) ? "1 ชั่วโมง" : duration == TimeSpan.FromDays(7) ? "7 วัน" : "24 ชั่วโมง";
             var selected = files.ToArray();
             session = await Task.Run(() => new ShareSession(selected, duration, selectedPin, approvalRequired));
             server = await LocalShareServer.StartAsync(session, network.Address);
+            string shareUrl = server.Url;
+            if (network.IsTunnel)
+            {
+                string origin = new Uri(server.Url).GetLeftPart(UriPartial.Authority);
+                tunnel = await CloudflareQuickTunnel.StartAsync(origin);
+                tunnelStartedAt = DateTime.UtcNow;
+                shareUrl = tunnel.Url + new Uri(server.Url).AbsolutePath;
+            }
             activeShare = new ShareRecord
             {
-                Code = server.Url, Session = session, FileCount = session.Files.Count(f => !f.IsDirectory),
+                Code = shareUrl, Session = session, FileCount = session.Files.Count(f => !f.IsDirectory),
                 TotalBytes = session.Files.Sum(f => f.Length),
                 Expiry = expiryLabel
             };
-            using var qrData = QRCodeGenerator.GenerateQrCode(server.Url, QRCodeGenerator.ECCLevel.M);
+            using var qrData = QRCodeGenerator.GenerateQrCode(shareUrl, QRCodeGenerator.ECCLevel.M);
             using var qr = new PngByteQRCode(qrData);
             using var png = new MemoryStream(qr.GetGraphic(8));
             var bitmap = new BitmapImage();
@@ -267,24 +291,25 @@ public partial class MainWindow : Window
             QueueHistorySave();
             ShareTitle.Text = "พร้อมให้รับไฟล์";
             ShareDetails.Text = $"{activeShare.FileCount} ไฟล์ • {SelectedFile.FormatSize(activeShare.TotalBytes)} • หมดอายุ {session.ExpiresAt.ToLocalTime():dd/MM HH:mm}" + (selectedPin == null ? "" : " • ป้องกันด้วย PIN") + (approvalRequired ? " • ต้องอนุมัติผู้รับ" : "");
-            ShareCode.Text = server.Url;
+            ShareCode.Text = shareUrl;
             SharePin.Text = selectedPin ?? "";
             PinResultPanel.Visibility = selectedPin == null ? Visibility.Collapsed : Visibility.Visible;
             ApprovalPanel.Visibility = approvalRequired ? Visibility.Visible : Visibility.Collapsed;
             ApprovalEmpty.Visibility = Visibility.Visible;
-            ResultStatus.Text = System.Net.IPAddress.IsLoopback(network.Address) ? "ลิงก์นี้ใช้ทดสอบได้บนเครื่องผู้ส่งเท่านั้น" : "ผู้รับต้องอยู่ Wi-Fi/LAN เดียวกัน";
+            ResultStatus.Text = network.IsTunnel ? "Tunnel HTTPS พร้อมแล้ว • URL สาธารณะชั่วคราว • ข้อมูลผ่าน Cloudflare" : System.Net.IPAddress.IsLoopback(network.Address) ? "ลิงก์นี้ใช้ทดสอบได้บนเครื่องผู้ส่งเท่านั้น" : "ผู้รับต้องอยู่ Wi-Fi/LAN เดียวกัน";
             QrFrame.Opacity = 1;
             CopyButton.Visibility = StopButton.Visibility = Visibility.Visible;
             RestartButton.Visibility = Visibility.Collapsed;
             RefreshTransfer();
             ShowStep(2);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Net.Sockets.SocketException or InvalidOperationException or ArgumentException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Net.Sockets.SocketException or InvalidOperationException or ArgumentException or TimeoutException)
         {
+            tunnel?.Dispose(); tunnel = null;
             if (server != null) { await server.DisposeAsync(); server = null; }
             else session?.Dispose();
             activeShare = null;
-            ShowError(PrepareError, "เริ่มแชร์ไม่สำเร็จ ตรวจว่าไฟล์ยังอ่านได้ และเลือก IP ของเครือข่ายที่เชื่อมต่ออยู่ จากนั้นลองใหม่");
+            ShowError(PrepareError, ex is FileNotFoundException ? "ไม่พบ cloudflared • ติดตั้ง Cloudflare Tunnel แล้วลองใหม่" : ex is TimeoutException ? "เริ่ม Cloudflare Tunnel ไม่ทันเวลา • ตรวจอินเทอร์เน็ตแล้วลองใหม่" : "เริ่มแชร์ไม่สำเร็จ ตรวจไฟล์ เครือข่าย หรือการเชื่อมต่อ Tunnel แล้วลองใหม่");
         }
         finally { creating = false; PreparePanel.IsEnabled = true; HistoryButton.IsEnabled = true; }
     }
@@ -292,6 +317,19 @@ public partial class MainWindow : Window
     void RefreshTransfer()
     {
         if (activeShare == null) return;
+        if (tunnel != null && tunnel.IsRunning && !tunnelProbeActive && DateTime.UtcNow - tunnelStartedAt > TimeSpan.FromSeconds(15)) _ = ProbeTunnelAsync();
+        if (tunnel != null && activeShare.IsStopped)
+        {
+            tunnel.Dispose(); tunnel = null;
+            ResultStatus.Text = "รายการแชร์สิ้นสุดแล้ว • หยุด Tunnel และปิด URL ภายนอกแล้ว";
+        }
+        if (tunnel != null && !tunnel.IsRunning && !activeShare.IsStopped)
+        {
+            activeShare.Stop();
+            QueueHistorySave();
+            ResultStatus.Text = "Cloudflare Tunnel ขาดการเชื่อมต่อ • ลิงก์ภายนอกถูกปิดแล้ว";
+            tunnel.Dispose(); tunnel = null;
+        }
         var snapshot = activeShare.Session!.Snapshot();
         RefreshApprovalRequests();
         if (activeShare.Refresh()) QueueHistorySave();
@@ -312,6 +350,29 @@ public partial class MainWindow : Window
             RestartButton.Visibility = Visibility.Visible;
             RestartButton.IsDefault = !showingHistory && step == 2;
         }
+    }
+    async Task ProbeTunnelAsync()
+    {
+        if (tunnel == null || activeShare == null || activeShare.IsStopped || tunnelProbeActive) return;
+        tunnelProbeActive = true;
+        var currentTunnel = tunnel;
+        try
+        {
+            using var response = await tunnelHealthClient.GetAsync(activeShare.Code, HttpCompletionOption.ResponseHeadersRead);
+            if (!response.IsSuccessStatusCode) throw new HttpRequestException("Tunnel health request failed.");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            if (ReferenceEquals(tunnel, currentTunnel) && activeShare?.IsStopped == false)
+            {
+                activeShare.Stop();
+                QueueHistorySave();
+                tunnel.Dispose(); tunnel = null;
+                ResultStatus.Text = "Cloudflare Tunnel ติดต่อไม่ได้ • ลิงก์ภายนอกถูกปิดแล้ว";
+                RefreshTransfer();
+            }
+        }
+        finally { tunnelProbeActive = false; }
     }
     void RefreshApprovalRequests()
     {
@@ -342,6 +403,7 @@ public partial class MainWindow : Window
     {
         if (activeShare == null || activeShare.IsStopped) return;
         activeShare.Stop();
+        tunnel?.Dispose(); tunnel = null;
         QueueHistorySave();
         ResultStatus.Text = "ลิงก์ถูกยกเลิกแล้ว ไฟล์ต้นฉบับยังอยู่ครบ";
         RefreshTransfer();
@@ -361,6 +423,7 @@ public partial class MainWindow : Window
         try
         {
             if (server != null) { await server.DisposeAsync(); server = null; }
+            tunnel?.Dispose(); tunnel = null;
             activeShare = null;
             files.Clear();
             ExpiryDay.IsChecked = true;
@@ -430,7 +493,7 @@ public partial class MainWindow : Window
         QueueHistorySave();
         refreshTimer.Stop();
         IsEnabled = false;
-        try { if (server != null) await server.DisposeAsync(); await historySave; }
+        try { tunnel?.Dispose(); tunnel = null; if (server != null) await server.DisposeAsync(); await historySave; }
         finally { tray?.Dispose(); tray = null; Close(); }
     }
 }
