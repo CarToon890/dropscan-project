@@ -16,7 +16,7 @@
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="QRCoder" Version="1.8.0" />
+    <PackageReference Include="QRCoder" Version="1.8.1" />
     <Compile Remove="tests/**/*.cs" />
     <Page Remove="tests/**/*.xaml" />
   </ItemGroup>
