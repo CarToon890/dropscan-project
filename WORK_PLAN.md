@@ -136,12 +136,14 @@ PIN เพิ่มการควบคุมผู้รับ แต่ข้
 - [x] Tunnel เปิด URL HTTPS ชั่วคราว แล้วแนบ path/token ของรายการแชร์เพื่อสร้าง QR
 - [x] โหมด Tunnel bind Kestrel เฉพาะ loopback; โหมด LAN เดิมยังเลือก IP ของเครือข่ายเอง
 - [x] หยุด Tunnel เมื่อผู้ใช้หยุดแชร์, รายการหมดอายุ, แอปปิด, เริ่มรายการใหม่ หรือ Tunnel process จบ
-- [x] ตรวจ URL ภายนอกเป็นระยะ; เมื่อ health check ล้มเหลวจะหยุด session และ Tunnel แทนการ fallback เป็น HTTP
+- [x] ตรวจ URL ภายนอกด้วย HEAD ทุก 15 วินาที; health check ต้องล้มเหลว 3 ครั้งติดจึงหยุด session และ Tunnel โดยไม่ fallback เป็น HTTP
 - [x] ตั้ง cookie Secure เมื่อ request ผ่าน HTTPS ที่ Tunnel ส่งต่อด้วย `X-Forwarded-Proto`
 - [x] ติดตั้ง `cloudflared` และตรวจเริ่ม/หยุด Quick Tunnel บนเครื่องนี้
 - [x] ทดสอบเปิดลิงก์ HTTPS และดาวน์โหลดไฟล์ `TunnelSmoke.txt` (69 B) จากหน้าเว็บรับไฟล์; สถานะผู้ส่งรายงาน 100%
 - [ ] ทดสอบดาวน์โหลด ZIP/ไฟล์ใหญ่ผ่านเน็ตมือถือจริง
-- [x] เพิ่มและรัน DesktopSmoke ตรวจกรณี health probe ล้มเหลวและ process ลูกจำลองจบ: รายการถูกหยุด ลิงก์ถูกปิด และแสดงสถานะขาดการเชื่อมต่อ; ทดสอบ local-only ไม่ได้ตัดการเชื่อมต่อ Cloudflare จริง
+- [x] เพิ่มและรัน DesktopSmoke 97 assertions: ตรวจรอบ health check, ความล้มเหลว 2 ครั้งแล้วยังแชร์ต่อ/ครั้งที่ 3 ปิดลิงก์, process ลูกจำลองจบ และ timeout ตอนเริ่มแล้วปิด process; เป็น local-only ไม่ได้ตัดการเชื่อมต่อ Cloudflare จริง
+- [x] รับ IP ผู้รับจาก `CF-Connecting-IP` เฉพาะ Tunnel ที่ bind loopback; PIN แยก rate limit ตาม IP, คำขออนุมัติแสดง IP ผู้รับ และ LAN ปฏิเสธ header ปลอม (PhaseThreeSmoke 36, ApprovalSmoke 39)
+- [x] Regression หลังแก้: TransferSmoke 25, PhaseTwoSmoke 34 และ Release build ผ่าน; build ไม่มี warning/error
 - [x] หยุดและเริ่ม Tunnel ใหม่ผ่านแอป: URL รอบใหม่เปลี่ยน และหน้าเว็บผู้รับ/QR ใหม่พร้อมใช้
 - เลือกผู้ให้บริการที่รองรับ TLS certificate ที่ browser เชื่อถือได้ โดยไม่ต้องติดตั้ง root certificate ที่เครื่องผู้รับ
 - แยกโหมด LAN กับข้ามเครือข่ายให้เห็นชัด ไม่เปิดให้เข้าถึงจากอินเทอร์เน็ตโดยอัตโนมัติ
@@ -153,7 +155,7 @@ PIN เพิ่มการควบคุมผู้รับ แต่ข้
 
 ### ลำดับงานถัดไป
 
-1. [x] สร้างแพ็กเกจ Windows x64 แบบ self-contained ที่ `artifacts/packages/DropScan-win-x64.zip`; มี DropScan.exe และคู่มือผู้ใช้ ไม่ต้องติดตั้ง .NET Runtime แยก
+1. [x] สร้างแพ็กเกจ Windows x64 แบบ self-contained ใหม่หลัง hardening ที่ `artifacts/packages/DropScan-win-x64.zip`; มี DropScan.exe และคู่มือผู้ใช้ ไม่ต้องติดตั้ง .NET Runtime แยก
 2. ตรวจเปิดแพ็กเกจบน Windows ที่ไม่มีเครื่องมือพัฒนา — ยังไม่ทดสอบการเปิดหน้าต่างแอปในรอบนี้ตามคำสั่งไม่ให้ควบคุมคอมพิวเตอร์
 3. กลับมาทดสอบข้ามเครือข่ายจริง (ผู้ส่ง Wi-Fi / ผู้รับเน็ตมือถือ) เมื่อผู้ใช้พร้อม โดยยังไม่นับเป็นผลผ่าน
 
