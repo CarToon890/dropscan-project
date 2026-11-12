@@ -37,6 +37,24 @@ internal static class Program
                 Check((await client.GetAsync(server.Url + "/f/0")).IsSuccessStatusCode, "Open share remains backward compatible");
             }
 
+            using (var tunnelIdentity = new ShareSession(new[] { source }, TimeSpan.FromMinutes(1), approvalRequired: true))
+            await using (var server = await LocalShareServer.StartAsync(tunnelIdentity, IPAddress.Loopback, trustCloudflareClientIp: true))
+            using (var client = Client(out _))
+            {
+                client.DefaultRequestHeaders.TryAddWithoutValidation("CF-Connecting-IP", "203.0.113.42");
+                await client.PostAsync(server.Url + "/request", null);
+                Check(tunnelIdentity.SnapshotApprovalRequests().Single().ClientLabel == "203.0.113.42", "Tunnel approval displays Cloudflare's forwarded recipient IP");
+            }
+
+            using (var untrustedHeader = new ShareSession(new[] { source }, TimeSpan.FromMinutes(1), approvalRequired: true))
+            await using (var server = await LocalShareServer.StartAsync(untrustedHeader, IPAddress.Loopback))
+            using (var client = Client(out _))
+            {
+                client.DefaultRequestHeaders.TryAddWithoutValidation("CF-Connecting-IP", "203.0.113.99");
+                await client.PostAsync(server.Url + "/request", null);
+                Check(untrustedHeader.SnapshotApprovalRequests().Single().ClientLabel == "127.0.0.1", "LAN mode ignores a spoofed Cloudflare client-IP header");
+            }
+
             using (var session = new ShareSession(new[] { source }, TimeSpan.FromMinutes(1), approvalRequired: true))
             await using (var server = await LocalShareServer.StartAsync(session, IPAddress.Loopback))
             using (var client = Client(out var cookies))
@@ -180,3 +198,4 @@ internal static class Program
         return 0;
     }
 }
+
