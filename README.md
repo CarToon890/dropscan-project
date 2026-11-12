@@ -8,6 +8,8 @@ DropScan is a Windows desktop app for sending files directly from your PC. A rec
 
 [Security policy](SECURITY.md) · [Privacy](PRIVACY.md) · [Contributing](CONTRIBUTING.md) · [Development plan](WORK_PLAN.md)
 
+ซอร์สโค้ดและตัวแอปใช้สัญญาอนุญาต [MIT](LICENSE) รวมข้อความใบอนุญาตและ notice ที่เกี่ยวข้องไว้ในแพ็กเกจ Windows
+
 ## เปิดใช้งาน
 
 ก่อนมี Release อย่างเป็นทางการ ให้ build จาก source ด้วย .NET 10 SDK หรือใช้แพ็กเกจ ZIP ที่สร้างจาก workflow `Windows CI` แพ็กเกจ self-contained รวม runtime ที่จำเป็นแล้ว ไม่ต้องติดตั้ง .NET แยก
