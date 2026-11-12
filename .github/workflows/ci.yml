@@ -1,0 +1,102 @@
+name: Windows CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-package:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore application and tests
+        shell: pwsh
+        run: |
+          $projects = @(
+            'DropScan.csproj',
+            'tests/TransferSmoke/TransferSmoke.csproj',
+            'tests/PhaseTwoSmoke/PhaseTwoSmoke.csproj',
+            'tests/PhaseThreeSmoke/PhaseThreeSmoke.csproj',
+            'tests/ApprovalSmoke/ApprovalSmoke.csproj',
+            'tests/DesktopSmoke/DesktopSmoke.csproj'
+          )
+          foreach ($project in $projects) {
+            dotnet restore $project --configfile NuGet.Config -p:NuGetAudit=true
+            if ($LASTEXITCODE -ne 0) { throw "Restore failed: $project" }
+          }
+
+      - name: Build Release
+        run: dotnet build DropScan.csproj --configuration Release --no-restore
+
+      - name: Run smoke suites
+        shell: pwsh
+        run: |
+          $projects = @(
+            'tests/TransferSmoke/TransferSmoke.csproj',
+            'tests/PhaseTwoSmoke/PhaseTwoSmoke.csproj',
+            'tests/PhaseThreeSmoke/PhaseThreeSmoke.csproj',
+            'tests/ApprovalSmoke/ApprovalSmoke.csproj',
+            'tests/DesktopSmoke/DesktopSmoke.csproj'
+          )
+          foreach ($project in $projects) {
+            Write-Host "Running $project"
+            dotnet run --project $project --configuration Release --no-restore
+            if ($LASTEXITCODE -ne 0) { throw "Smoke suite failed: $project" }
+          }
+
+      - name: Check NuGet vulnerabilities
+        shell: pwsh
+        run: |
+          $projects = @(
+            'DropScan.csproj',
+            'tests/TransferSmoke/TransferSmoke.csproj',
+            'tests/PhaseTwoSmoke/PhaseTwoSmoke.csproj',
+            'tests/PhaseThreeSmoke/PhaseThreeSmoke.csproj',
+            'tests/ApprovalSmoke/ApprovalSmoke.csproj',
+            'tests/DesktopSmoke/DesktopSmoke.csproj'
+          )
+          foreach ($project in $projects) {
+            Write-Host "Auditing $project"
+            $auditOutput = dotnet list $project package --vulnerable --include-transitive 2>&1
+            $auditOutput | Tee-Object -FilePath artifacts/nuget-audit.txt -Append
+            if ($LASTEXITCODE -ne 0) { throw "NuGet vulnerability audit failed: $project" }
+            if (($auditOutput -join "`n") -match '(?i)has the following vulnerable packages|vulnerabilities found:') {
+              throw "Vulnerable NuGet packages were reported in $project."
+            }
+          }
+
+      - name: Create Windows package and checksum
+        if: github.event_name != 'pull_request'
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File tools/Publish-Windows.ps1
+
+      - name: Upload Windows package
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: DropScan-win-x64
+          path: |
+            artifacts/packages/DropScan-win-x64.zip
+            artifacts/packages/DropScan-win-x64.zip.sha256
+            artifacts/nuget-audit.txt
+          if-no-files-found: error
+          retention-days: 30
+
