@@ -24,6 +24,10 @@ internal static class Program
     static void AsyncCall(string name)
     {
         var task = (Task)typeof(MainWindow).GetMethod(name, Private)!.Invoke(window, null)!;
+        WaitFor(task);
+    }
+    static void WaitFor(Task task)
+    {
         if (!task.IsCompleted)
         {
             var frame = new DispatcherFrame();
@@ -38,17 +42,15 @@ internal static class Program
     {
         var start = new ProcessStartInfo
         {
-            FileName = Environment.GetEnvironmentVariable("COMSPEC") ?? "cmd.exe",
+            FileName = "powershell.exe",
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
-        start.ArgumentList.Add("/c");
-        start.ArgumentList.Add("ping");
-        start.ArgumentList.Add("-n");
-        start.ArgumentList.Add("60");
-        start.ArgumentList.Add("127.0.0.1");
+        start.ArgumentList.Add("-NoProfile");
+        start.ArgumentList.Add("-Command");
+        start.ArgumentList.Add("Start-Sleep -Seconds 60");
         return Process.Start(start) ?? throw new InvalidOperationException("Could not start local tunnel fixture process.");
     }
 
@@ -76,8 +78,12 @@ internal static class Program
         typeof(MainWindow).GetField("activeShare", Private)!.SetValue(window, healthRecord);
         typeof(MainWindow).GetField("tunnel", Private)!.SetValue(window, WrapTunnelProcess(StartTunnelFixture()));
         AsyncCall("ProbeTunnelAsync");
-        Check(healthRecord.IsStopped, "Failed Tunnel health probe stops the share");
-        Check(Field<CloudflareQuickTunnel?>("tunnel") == null && Control<TextBlock>("ResultStatus").Text.Contains("ติดต่อไม่ได้"), "Failed Tunnel health probe disposes the tunnel and reports the outage");
+        Check(!healthRecord.IsStopped && Field<CloudflareQuickTunnel?>("tunnel") != null && Control<TextBlock>("ResultStatus").Text.Contains("ลองใหม่ (1/3)"), "First Tunnel health failure keeps the share active and schedules a retry");
+        AsyncCall("ProbeTunnelAsync");
+        Check(!healthRecord.IsStopped && Field<CloudflareQuickTunnel?>("tunnel") != null, "Second Tunnel health failure keeps the share active");
+        AsyncCall("ProbeTunnelAsync");
+        Check(healthRecord.IsStopped, "Three consecutive Tunnel health failures stop the share");
+        Check(Field<CloudflareQuickTunnel?>("tunnel") == null && Control<TextBlock>("ResultStatus").Text.Contains("ติดต่อไม่ได้ 3 ครั้ง"), "Repeated Tunnel health failures dispose the tunnel and report the outage");
         window.Close();
 
         // An unexpectedly exited cloudflared child must also revoke the share on the next refresh tick.
@@ -88,12 +94,38 @@ internal static class Program
         typeof(MainWindow).GetField("activeShare", Private)!.SetValue(window, exitRecord);
         var child = StartTunnelFixture();
         typeof(MainWindow).GetField("tunnel", Private)!.SetValue(window, WrapTunnelProcess(child));
+        typeof(MainWindow).GetField("nextTunnelProbeAt", Private)!.SetValue(window, DateTime.UtcNow.AddHours(1));
+        Call("RefreshTransfer");
+        Check(!Field<bool>("tunnelProbeActive"), "UI refresh does not trigger an unscheduled Tunnel health probe");
         child.Kill(entireProcessTree: true);
         child.WaitForExit(5000);
         Call("RefreshTransfer");
         Check(exitRecord.IsStopped, "Unexpected cloudflared process exit stops the share");
         Check(Field<CloudflareQuickTunnel?>("tunnel") == null && Control<TextBlock>("ResultStatus").Text.Contains("ขาดการเชื่อมต่อ"), "Unexpected cloudflared exit disposes the tunnel and reports the outage");
         window.Close();
+    }
+
+    static void VerifyTunnelStartupTimeoutCleanup()
+    {
+        using var child = StartTunnelFixture();
+        var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        child.EnableRaisingEvents = true;
+        child.Exited += (_, _) => exited.TrySetResult();
+        var method = typeof(CloudflareQuickTunnel).GetMethod("StartAsync", Private | BindingFlags.Static, null,
+            new[] { typeof(string), typeof(TimeSpan?), typeof(CancellationToken), typeof(Func<ProcessStartInfo, Process?>) }, null)!;
+        var start = (Task)method.Invoke(null, new object?[]
+        {
+            "http://127.0.0.1:1",
+            TimeSpan.FromMilliseconds(250),
+            CancellationToken.None,
+            (Func<ProcessStartInfo, Process?>)(_ => child)
+        })!;
+        bool timedOut = false;
+        try { WaitFor(start); }
+        catch (TimeoutException) { timedOut = true; }
+        Check(timedOut, "Tunnel startup without a URL returns a timeout");
+        WaitFor(exited.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+        Check(exited.Task.IsCompleted, "Tunnel startup timeout terminates the child process");
     }
 
     [STAThread]
@@ -214,6 +246,7 @@ internal static class Program
             Check(restored[0].Session == null && restored[0].Code == "" && restored[0].IsStopped, "Reopening cannot revive a share or token");
             window.Close();
             VerifyTunnelFailurePaths(output, first);
+            VerifyTunnelStartupTimeoutCleanup();
             Console.WriteLine($"PASS: {assertions} assertions; 32 WPF layout renders at 960x720 / 800x600, 125% / 150% DPI. Output: {output}");
             return 0;
         }
