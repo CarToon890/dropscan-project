@@ -45,6 +45,7 @@ if (!(Test-Path -LiteralPath $executable -PathType Leaf)) {
 }
 
 Copy-Item -LiteralPath (Join-Path $repoRoot "packaging\README-user.md") -Destination $outputDirectory
+Copy-Item -LiteralPath (Join-Path $repoRoot "LICENSE") -Destination (Join-Path $outputDirectory "LICENSE-DropScan.txt")
 Copy-Item -LiteralPath (Join-Path $repoRoot "packaging\THIRD-PARTY-NOTICES.md") -Destination $outputDirectory
 $dotnetRoot = Split-Path (Get-Command dotnet).Source
 foreach ($notice in @{
